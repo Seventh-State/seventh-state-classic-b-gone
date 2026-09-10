@@ -1,0 +1,48 @@
+%%% @author: Seventh State <contact@seventhstate.io>
+%%% @copyright (C) 2025, Seventh State
+
+%% Do we log or enforce
+{mapping, "seven_classic_b_gone.enforcement_mode", "seven_classic_b_gone.mode", [
+    {datatype, {enum, [log, enforce]}},
+    {validators, []}]}.
+
+%% log log level
+{mapping, "seven_classic_b_gone.log_mode_log_level", "seven_classic_b_gone.log_level", [
+    {datatype, {enum, [debug,info,warning,error]}},
+    {validators, []}]}.
+
+%% enforcement log level
+{mapping, "seven_classic_b_gone.enforce_mode_log_level", "seven_classic_b_gone.enforce_log_level", [
+    {datatype, {enum, [debug,info,warning,error]}},
+    {validators, []}]}.
+
+%% disable exclusive classic queues
+{mapping, "seven_classic_b_gone.disable_exclusive_queues", "seven_classic_b_gone.exclusive", [
+    {datatype, boolean},
+    {validators, []}]}.
+
+%% disable existing queues declare
+{mapping, "seven_classic_b_gone.disable_existing_queues", "seven_classic_b_gone.existing", [
+    {datatype, boolean},
+    {validators, []}]}.
+
+%% let passive declare through
+{mapping, "seven_classic_b_gone.always_let_passive_declare", "seven_classic_b_gone.passive", [
+    {datatype, boolean},
+    {validators, []}]}.
+
+%% log message: existing queues
+{mapping, "seven_classic_b_gone.existing_queue_log_message", "seven_classic_b_gone.existing_log", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% log message: new declare
+{mapping, "seven_classic_b_gone.new_queue_log_message", "seven_classic_b_gone.new_log", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% AMQP error: new declare
+{mapping, "seven_classic_b_gone.new_queue_amqp_error_text", "seven_classic_b_gone.new_amqp_error", [
+    {datatype, string},
+    {validators, []}]}.
+

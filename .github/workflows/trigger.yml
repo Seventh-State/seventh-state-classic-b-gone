@@ -1,0 +1,23 @@
+# .github/workflows/trigger.yml in Public Repo
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on tag push, e.g., v1.0.0
+  workflow_dispatch:
+
+jobs:
+  run-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Worker
+        env:
+          GH_TOKEN: ${{ secrets.WORKER_PAT }}
+        run: |
+          gh api repos/Seventh-State/seventh-state-plugin-builder/dispatches \
+            -f event_type='build_release' \
+            -f client_payload[project]='classic-b-gone' \
+            -f client_payload[ref]='${{ github.ref }}' \
+            -f client_payload[ref_name]='${{ github.ref_name }}' \
+            -f client_payload[ref_type]='${{ github.ref_type }}'

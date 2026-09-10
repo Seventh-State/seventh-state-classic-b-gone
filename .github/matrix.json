@@ -1,0 +1,6 @@
+{
+  "include": [
+      { "otp": "25.0", "elixir": "1.13", "rabbitmq": "v3.12.14" },
+      { "otp": "26.0", "elixir": "1.14", "rabbitmq": "v3.13.7" }
+  ]
+}

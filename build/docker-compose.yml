@@ -1,0 +1,8 @@
+services:
+  test-and-build:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    volumes:
+      - ..:/app
+    working_dir: /app

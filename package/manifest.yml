@@ -1,0 +1,10 @@
+name: seventh_state_classic_b_gone
+version: 1.0.1
+summary: Seventh State Classic-b-gone plugin packaged with the Seventh State extension framework
+artifact: seventh_state_classic_b_gone-1.0.1.ez
+rabbitmq:
+  min: 3.12.0
+  max: 3.13.7
+otp:
+  min: "25"
+  max: "26.x"

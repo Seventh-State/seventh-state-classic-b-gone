@@ -1,0 +1,13 @@
+diff --git a/lib/rabbitmq/cli/formatters/csv.ex b/lib/rabbitmq/cli/formatters/csv.ex
+index abc6fb0f8c..66fe21e988 100644
+--- a/lib/rabbitmq/cli/formatters/csv.ex
++++ b/lib/rabbitmq/cli/formatters/csv.ex
+@@ -96,7 +96,7 @@ end
+ 
+ # Elixir 1.15 compiler optimizations require that we explicitly
+ # add the csv code path
+-true = Code.append_path(Path.join(["..", "csv", "ebin"]))
++true = Code.append_path(Path.join(["..", "..", "..", "csv", "ebin"]))
+ 
+ defimpl CSV.Encode, for: PID do
+   def encode(pid, env \\ []) do
