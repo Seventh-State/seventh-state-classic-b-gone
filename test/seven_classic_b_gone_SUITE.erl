@@ -13,13 +13,15 @@ all() ->
     [{group, clustered_3},
      {group, clustered_1},
      {group, clustered_3_enforce},
-     {group, clustered_1_enforce}].
+     {group, clustered_1_enforce},
+     {group, clustered_1_enforce_nopolicy}].
 
 groups() ->
-    [{clustered_3, [], [configuration_test_3, cluster_test_log]},
-     {clustered_1, [], [configuration_test_1, single_node_test_log]},
-     {clustered_3_enforce, [], [configuration_test_3_enforce, cluster_test_enforce]},
-     {clustered_1_enforce, [], [configuration_test_1_enforce, single_node_test_enforce]}].
+    [{clustered_3, [], [configuration_test_3, cluster_test]},
+     {clustered_1, [], [configuration_test_1, single_node_test]},
+     {clustered_3_enforce, [], [configuration_test_3_enforce, cluster_test]},
+     {clustered_1_enforce, [], [configuration_test_1_enforce, single_node_test]},
+     {clustered_1_enforce_nopolicy, [], [configuration_test_1_enforce_nopolicy, single_node_test]}].
 
 %% -------------------------------------------------------------------
 %% Test suite setup/teardown
@@ -33,15 +35,13 @@ end_per_suite(Config) ->
     rabbit_ct_helpers:run_teardown_steps(Config).
 
 init_per_group(clustered_3 = Group, Config) ->
-    init_per_group(Group, Config, 3, false);
+    init_per_group(Group, Config, 3);
 init_per_group(clustered_3_enforce = Group, Config) ->
-    init_per_group(Group, Config, 3, true);
-init_per_group(clustered_1_enforce = Group, Config) ->
-    init_per_group(Group, Config, 1, true);
-init_per_group(clustered_1 = Group, Config) ->
-    init_per_group(Group, Config, 1, false).
+    init_per_group(Group, Config, 3);
+init_per_group(Group, Config) ->
+    init_per_group(Group, Config, 1).
 
-init_per_group(Group, Config, NodesCount, Enforce) ->
+init_per_group(Group, Config, NodesCount) ->
     inets:start(),
     Config0 =
         rabbit_ct_helpers:set_config(Config,
@@ -58,12 +58,22 @@ init_per_group(Group, Config, NodesCount, Enforce) ->
                     {new_log, "I am a log"},
                     {new_amqp_error, "I am ERROR"}
                 ]}] ;
+        clustered_1_enforce_nopolicy -> [{seven_classic_b_gone, [
+                    {mode, enforce},
+                    {log_log_level, warning},
+                    {passive, false},
+                    {exclusive, true},
+                    {new_log, "I am a log"},
+                    {new_amqp_error, "I am ERROR"},
+                    {policies, false}
+                ]}] ;
         clustered_3_enforce -> [{rabbit, [{cluster_partition_handling, pause_minority}]},
                  {seven_classic_b_gone, [
                     {mode, enforce},
                     {log_log_level, debug},
                     {passive, true},
-                    {exclusive, false}
+                    {exclusive, false},
+                    {policies, false}
                 ]}] ;
         clustered_3 -> [{rabbit, [{cluster_partition_handling, pause_minority}]}] ;
         clustered_1 -> [{seven_classic_b_gone, [
@@ -73,10 +83,12 @@ init_per_group(Group, Config, NodesCount, Enforce) ->
     end,
     Config1 =
         rabbit_ct_helpers:merge_app_env(Config0, AdditionalConfig),
-    rabbit_ct_helpers:run_steps(Config1,
+    Config2 = rabbit_ct_helpers:run_steps(Config1,
                                 [fun rabbit_ct_broker_helpers:configure_dist_proxy/1]
                                 ++ rabbit_ct_broker_helpers:setup_steps()
-                                ++ rabbit_ct_client_helpers:setup_steps()).
+                                ++ rabbit_ct_client_helpers:setup_steps()),
+    declare_policies(Config2),
+    Config2.
 
 end_per_group(_, Config) ->
     inets:stop(),
@@ -93,10 +105,14 @@ end_per_testcase(Testcase, Config) ->
 %% -------------------------------------------------------------------
 %% Test cases
 %% -------------------------------------------------------------------
-get_config(Config, Fun) -> get_config(Config, Fun, []).
+get_config(Config, Fun) -> get_config(Config, 0, Fun).
+get_config(Config, Fun, Args) 
+    when is_list(Args) -> get_config(Config, 0, Fun, Args);
+get_config(Config, Node, Fun)
+    when is_integer(Node) -> get_config(Config, Node, Fun, []).
 
-get_config(Config, Fun, Args) ->
-    rabbit_ct_broker_helpers:rpc(Config, 0, seven_classic_b_gone_interceptor,
+get_config(Config, Node, Fun, Args) ->
+    rabbit_ct_broker_helpers:rpc(Config, Node, seven_classic_b_gone_interceptor,
                                  Fun, Args).
 
 configuration_test_3(Config) ->
@@ -113,6 +129,7 @@ configuration_test_3_enforce(Config) ->
     debug = get_config(Config, log_level, [false]),
     true = get_config(Config, always_let_passive_declare),
     false = get_config(Config, disable_exclusive_queues),
+    false = get_config(Config, match_policies),
     ok.
 
 configuration_test_1_enforce(Config) ->
@@ -122,99 +139,152 @@ configuration_test_1_enforce(Config) ->
     "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
     false = get_config(Config, always_let_passive_declare),
     true = get_config(Config, disable_exclusive_queues),
+    true = get_config(Config, match_policies),
     ok.
 
-cluster_test_log(Config) -> cluster_test(Config, false).
-
-single_node_test_log(Config) -> single_node_test(Config, false).
-
-cluster_test_enforce(Config) -> cluster_test(Config, true).
-
-single_node_test_enforce(Config) -> single_node_test(Config, true).
-
-cluster_test(Config, Enforce) ->
-    ok = common_test(Config, Enforce),
-    ok = only_cluster_test(Config, Enforce),
-    ok.
-single_node_test(Config, Enforce) -> 
-    ok = common_test(Config, Enforce),
+configuration_test_1_enforce_nopolicy(Config) ->
+    enforce = get_config(Config, enforcement_mode),
+    warning = get_config(Config, log_level, [false]),
+    "I am a log" = get_config(Config, new_queue_log_message),
+    "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
+    false = get_config(Config, always_let_passive_declare),
+    true = get_config(Config, disable_exclusive_queues),
+    false = get_config(Config, match_policies),
     ok.
 
-common_test(Config, Enforce) ->
+cluster_test(Config) ->
+    ok = common_test(Config),
+    ok = only_cluster_test(Config),
+    ok.
+single_node_test(Config) -> 
+    ok = common_test(Config),
+    ok.
+
+-record(config, {
+    enforce,
+    pol,
+    excl
+}).
+
+common_test(Config) ->
     Node1 = nodename(Config, 0),
+    NodeConfig = #config{
+        enforce = enforce =:= get_config(Config, enforcement_mode),
+        pol = get_config(Config, match_policies),
+        excl = get_config(Config, disable_exclusive_queues)
+    },
 
     Queue = atom_to_binary(?FUNCTION_NAME),
-    {Connection, Channel} = open_connection_and_channel(Config, Node1),
-    declare_classic_queue(Enforce =/= true, Connection, <<Queue/binary, "_classic">>),
-    declare_exclusive_queue(get_config(Config, disable_exclusive_queues) =/= true, Connection, <<Queue/binary, "_exclusive">>),
-    declare_auto_delete_queue(Enforce =/= true, Connection, <<Queue/binary, "_classic_ad">>, [{<<"x-queue-type">>, longstr, <<"classic">>}]),
+    {Connection, _Channel} = open_connection_and_channel(Config, Node1),
+    %% this queue has no ha policy
+    declare_classic_queue(NodeConfig, Connection, <<Queue/binary, "_classic">>, false),
+    %% this queue has a non-ha policy
+    declare_classic_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_classic">>, false),
+    %% this queue has a non-ha policy
+    declare_exclusive_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_exclusive">>, false),
+    %% except exclusive is not HA
+    declare_exclusive_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_exclusive">>, true),
+
+    declare_auto_delete_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_ad1">>, true, [{<<"x-queue-type">>, longstr, <<"classic">>}]),
+    declare_auto_delete_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_classic_ad1">>, false, [{<<"x-queue-type">>, longstr, <<"classic">>}]),
+    declare_auto_delete_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_ad2">>, true),
+    declare_auto_delete_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_classic_ad2">>, false),
+
+    declare_classic_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic">>, true),
     %% test with qq if the connetion is disconnected or blocked when there is a consumer connected
     %% open a new connection to test if the connection is closed when the node is in minority partition
     Connection1 = open_connection(Config, Node1),
     {ok, Channel1} = open_channel(Connection1),
-    declare_quorum_queue(true, Connection1, <<Queue/binary, "_quorum">>),
+    declare_quorum_queue(NodeConfig, Connection1, <<Queue/binary, "_quorum">>),
     consume(Channel1, <<Queue/binary, "_quorum">>),
-    declare_quorum_queue(true, Connection1, <<Queue/binary, "_quorum_consume">>),
+    declare_quorum_queue(NodeConfig, Connection1, <<Queue/binary, "_quorum_consume">>),
 
     {ok, OpenNewChannel} = open_channel(Config, Node1),
-    declare_classic_queue(Enforce =/= true, Connection1, <<Queue/binary, "_classic_recovered">>),
-    case Enforce of
+    declare_classic_queue(NodeConfig, Connection1, <<Queue/binary, "_classic_recovered">>, false),
+    case NodeConfig#config.enforce of
         false ->
             assert_classic_queue_works(OpenNewChannel, <<Queue/binary, "_classic_recovered">>) ;
         _ -> ok
     end,
     assert_quorum_queue_works(OpenNewChannel, <<Queue/binary, "_quorum_consume">>),
+
+    declare_classic_queue(NodeConfig, Connection1, <<"ha-enabled">>, true),
+    declare_classic_queue(NodeConfig, Connection1, <<"ha-disable">>, false),
     ok.
 
-only_cluster_test(Config, _Enforce) -> 
+expect_works(declare_quorum_queue, _Config, _Ha) ->
+    true;
+expect_works(declare_exclusive_queue, #config{enforce = Enforce, excl = ExclDisabled}, _Ha) -> %, _, Enforce, _, ExclDisabled) ->
+    not (Enforce andalso ExclDisabled);
+expect_works(declare_auto_delete_queue, Config, Ha) -> 
+    expect_works(declare_classic_queue, Config, Ha) ;
+expect_works(declare_classic_queue, #config{enforce = Enforce, pol = Pol}, Ha) -> %, Enforce, Pol, _) ->
+    not (Enforce andalso (Ha orelse not Pol)).
+
+only_cluster_test(Config) -> 
     Queue = atom_to_binary(?FUNCTION_NAME),
+    Node2Config = #config{
+        enforce = enforce =:= get_config(Config, 1, enforcement_mode),
+        pol = get_config(Config, 1, match_policies),
+        excl = get_config(Config, 1, disable_exclusive_queues)
+    },
+    Node3Config = #config{
+        enforce = enforce =:= get_config(Config, 2, enforcement_mode),
+        pol = get_config(Config, 2, match_policies),
+        excl = get_config(Config, 2, disable_exclusive_queues)
+    },
     Node2 = nodename(Config, 1),
     Connection2 = open_connection(Config, Node2),
     Node3 = nodename(Config, 2),
     Connection3 = open_connection(Config, Node3),
     ?assert(is_pid(Connection2), "Connection to Node2 should be able to open"),
     ?assert(is_pid(Connection3), "Connection to Node3 should be able to open"),
-    declare_quorum_queue(true, Connection2, <<Queue/binary, "_quorum_2">>),
-    declare_quorum_queue(true, Connection3, <<Queue/binary, "_quorum_3">>),
-    declare_quorum_queue(true, Connection2, <<Queue/binary, "_quorum_3">>),
-    declare_quorum_queue(true, Connection3, <<Queue/binary, "_quorum_2">>),
+    declare_quorum_queue(Node2Config, Connection2, <<Queue/binary, "_quorum_2">>),
+    declare_quorum_queue(Node3Config, Connection3, <<Queue/binary, "_quorum_3">>),
+    declare_quorum_queue(Node3Config, Connection2, <<Queue/binary, "_quorum_3">>),
+    declare_quorum_queue(Node2Config, Connection3, <<Queue/binary, "_quorum_2">>),
     ok.
 
-declare_classic_queue(Works, Connection, Queue) ->
-    declare_classic_queue(Works, Connection, Queue, []).
+declare_policies(Config) ->
+    ok = rabbit_ct_broker_helpers:rpc(Config, 0, rabbit_policy, set, [<<"/">>, <<"ha-all">>, <<"^ha.*">>, [{<<"ha-mode">>, <<"all">>}], 1, <<"queues">>, <<"acting-user">>]),
+    ok = rabbit_ct_broker_helpers:rpc(Config, 0, rabbit_policy, set, [<<"/">>, <<"ha-all-disable">>, <<"^ha-dis.*">>, [{<<"max-length">>, 100}], 2, <<"queues">>, <<"acting-user">>]).
+%%    ok = rabbit_ct_broker_helpers:rpc(Config, 0, rabbit_policy, set, [<<"/">>, <<"unrelated">>, <<"^.*">>, [{<<"max-length-bytes">>, 1000000}], 0, <<"queues">>, <<"acting-user">>]).
 
-declare_classic_queue(Works, Connection, Queue, Args) ->
-    run_declare(Works, Connection, #'queue.declare'{queue = Queue,
+declare_classic_queue(Config, Connection, Queue, Ha) ->
+    declare_classic_queue(Config, Connection, Queue, Ha, []).
+
+declare_classic_queue(Config, Connection, Queue, Ha, Args) ->
+    run_declare(expect_works(?FUNCTION_NAME, Config, Ha), Connection, #'queue.declare'{queue = Queue,
                                         durable = true,
                                         auto_delete = false,
                                         arguments = Args}).
 
-declare_exclusive_queue(Works, Connection, Queue) ->
-    declare_exclusive_queue(Works, Connection, Queue, []).
+declare_exclusive_queue(Config, Connection, Queue, Ha) ->
+    declare_exclusive_queue(Config, Connection, Queue, Ha, []).
 
-declare_exclusive_queue(Works, Connection, Queue, Args) ->
-    run_declare(Works, Connection, #'queue.declare'{queue = Queue,
+declare_exclusive_queue(Config, Connection, Queue, Ha, Args) ->
+    run_declare(expect_works(?FUNCTION_NAME, Config, Ha), Connection, #'queue.declare'{queue = Queue,
                                        durable = false,
                                        auto_delete = true,
                                        exclusive = true,
                                        arguments = Args}).
 
-declare_quorum_queue(Works, Connection, Queue) ->
-    declare_quorum_queue(Works, Connection, Queue, []).
+declare_quorum_queue(Config, Connection, Queue) ->
+    declare_quorum_queue(Config, Connection, Queue, []).
 
-declare_quorum_queue(Works, Connection, Queue, Args) ->
+declare_quorum_queue(Config, Connection, Queue, Args) ->
     % We don't want any x-queue-type, as it's injected by this function
     false = lists:keymember(<<"x-queue-type">>, 1, Args),
-    run_declare(Works, Connection, #'queue.declare'{queue = Queue,
+    run_declare(expect_works(?FUNCTION_NAME, Config, true), Connection, #'queue.declare'{queue = Queue,
                                        durable = true,
                                        auto_delete = false,
                                        arguments = Args ++ [{<<"x-queue-type">>, longstr, <<"quorum">>}]}).
 
-declare_auto_delete_queue(Works, Connection, Queue) -> 
-    declare_auto_delete_queue(Works, Connection, Queue, []).
+declare_auto_delete_queue(Config, Connection, Queue, Ha) -> 
+    declare_auto_delete_queue(Config, Connection, Queue, Ha, []).
 
-declare_auto_delete_queue(Works, Connection, Queue, Args) ->
-    run_declare(Works, Connection, #'queue.declare'{queue = Queue,
+declare_auto_delete_queue(Config, Connection, Queue, Ha, Args) ->
+    run_declare(expect_works(?FUNCTION_NAME, Config, Ha), Connection, #'queue.declare'{queue = Queue,
                                        durable = false,
                                        auto_delete = true,
                                        arguments = Args}).

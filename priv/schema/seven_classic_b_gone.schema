@@ -31,6 +31,11 @@
     {datatype, boolean},
     {validators, []}]}.
 
+%% check the policies to let classic non-ha through
+{mapping, "seven_classic_b_gone.inspect_policies", "seven_classic_b_gone.policies", [
+    {datatype, boolean},
+    {validators, []}]}.
+
 %% log message: existing queues
 {mapping, "seven_classic_b_gone.existing_queue_log_message", "seven_classic_b_gone.existing_log", [
     {datatype, string},

@@ -78,7 +78,17 @@ intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passiv
                     log_early_exit_type(Exclusive, FinalQType, QueueName, User, VHost),
                     {Method, Content};
                 _ ->
-                    log_potential_action(FinalQType, QueueName, User, VHost),
+                    HaPolicy = case match_policies() of 
+                        %% if we don't match on policies, we set to block the queue creation
+                        false -> skip ;
+                        %% if we do match policies, let's find out from the actual policies
+                        _ -> 
+                            PolDefinition = winning_definition(VHost, QueueName),
+                            IsHaPolicy = is_ha_definition(PolDefinition),
+                            ?LOG(debug, "Found prospective effective policy ~p - result: ~p", [PolDefinition, IsHaPolicy]),
+                            IsHaPolicy
+                    end,
+                    log_potential_action(FinalQType, QueueName, User, VHost, HaPolicy),
                     case enforcement_mode() of
                         enforce ->
                             %% figure out if we have an existing queue
@@ -88,12 +98,34 @@ intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passiv
                                 true ->
                                     {Method, Content};
                                 _ ->
-                                    log_enforcement(FinalQType, QueueName, User, VHost),
-                                    rabbit_misc:amqp_error(
-                                        'precondition_failed',
-                                        new_queue_amqp_error_text(),
-                                        [],
-                                        'queue.declare')
+                                    case disable_exclusive_queues() andalso Exclusive of
+                                        true ->
+                                            log_enforcement("Exclusive queues are disabled on this cluster", FinalQType, QueueName, User, VHost),
+                                            rabbit_misc:amqp_error(
+                                                'precondition_failed',
+                                                new_queue_amqp_error_text(),
+                                                [],
+                                                'queue.declare') ;
+                                        _ ->
+                                            case HaPolicy of
+                                                false ->
+                                                    {Method, Content};
+                                                true ->
+                                                    log_enforcement("Classic Mirrored queues are disabled on this cluster", FinalQType, QueueName, User, VHost),
+                                                    rabbit_misc:amqp_error(
+                                                        'precondition_failed',
+                                                        new_queue_amqp_error_text(),
+                                                        [],
+                                                        'queue.declare') ;
+                                                skip -> 
+                                                    log_enforcement("All classic queues are disabled on this cluster", FinalQType, QueueName, User, VHost),
+                                                    rabbit_misc:amqp_error(
+                                                        'precondition_failed',
+                                                        new_queue_amqp_error_text(),
+                                                        [],
+                                                        'queue.declare')
+                                            end
+                                    end
                             end;
                         _ ->
                             {Method, Content}
@@ -107,6 +139,37 @@ intercept(Method, Content, State) ->
     log_intercept(true, <<"/">>, "", fake_out, State, Content, Method),
 
     {Method, Content}.
+
+is_ha_definition(undefined) -> false ;
+is_ha_definition(PolDefinition) ->
+    case proplists:get_value(<<"ha-mode">>, PolDefinition, undefined) of
+        <<"all">> -> true ;
+        <<"nodes">> -> true ;
+        <<"exactly">> -> true;
+        _ -> false
+    end.
+
+matches(P, QName) ->
+    Pattern = proplists:get_value(pattern, P),
+    ApplyTo = proplists:get_value('apply-to', P, <<"all">>),
+    lists:member(ApplyTo, [<<"all">>, <<"queues">>, <<"classic_queues">>])
+        andalso re:run(QName, Pattern, [{capture, none}]) =:= match.
+
+winning_definition(VHost, QName) ->
+    Matching = [P || P <- rabbit_policy:list(VHost), matches(P, QName)],
+    ?LOG(debug, "All policies ~p", [Matching]),
+    ?LOG(debug, "Sorted policies ~p", [rabbit_policy:sort_by_priority(Matching)]),
+    W = case rabbit_policy:sort_by_priority(Matching) of
+        []        -> undefined;
+        M         -> lists:last(M)
+    end,
+    ?LOG(debug, "Top policy ~p", [W]),
+    MatchingOp = [P || P <- rabbit_policy:list_op(VHost), matches(P, QName)],
+    WOp = case rabbit_policy:sort_by_priority(MatchingOp) of
+        []        -> undefined;
+        M1        -> lists:last(M1)
+    end,
+    rabbit_policy:merge_operator_definitions(W, WOp).
 
 -spec early_exit_type(atom()) -> (boolean()).
 early_exit_type(rabbit_quorum_queue) -> true;
@@ -132,11 +195,14 @@ log_early_exit_type(false, QType, QName, User, VHost) ->
 log_early_exit(Text, QType, QName, User, VHost) ->
     ?LOG(debug, "~p User '~p' declared queue '~p' (~p) in vhost '~p'", [Text, User, QName, QType, VHost]).
 
-log_potential_action(QType, QName, User, VHost) ->
+log_potential_action(QType, QName, User, VHost, true) ->
+    log_early_exit("Enforcement worthy queue detected [HA policy]:", QType, QName, User, VHost);
+
+log_potential_action(QType, QName, User, VHost, _) ->
     log_early_exit("Enforcement worthy queue detected:", QType, QName, User, VHost).
 
-log_enforcement(QType, QName, User, VHost) ->
-    log_early_exit(new_queue_log_message(), QType, QName, User, VHost).
+log_enforcement(Reason, QType, QName, User, VHost) ->
+    ?LOG(log_level(true), new_queue_log_message() ++ "~p User '~p' declared queue '~p' (~p) in vhost '~p' - reason '~ts'", [QType, QName, User, VHost, Reason]).
 
 % Logging what is happening right now
 log_intercept(EnforcementState, VHostPath, User, QType, Args, Content, Method) ->
@@ -161,3 +227,6 @@ new_queue_log_message() ->
 
 new_queue_amqp_error_text() ->
     application:get_env(?APP, new_amqp_error, "New classic queues are not allowed on this cluster.").
+
+match_policies() ->
+    application:get_env(?APP, policies, true).
