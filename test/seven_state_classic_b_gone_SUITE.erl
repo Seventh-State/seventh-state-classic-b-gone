@@ -19,7 +19,7 @@ all() ->
 groups() ->
     [{clustered_3, [], [configuration_test_3, cluster_test]},
      {clustered_1, [], [configuration_test_1, single_node_test]},
-     {clustered_3_enforce, [], [configuration_test_3_enforce, cluster_test]},
+     {clustered_3_enforce, [], [configuration_test_3_enforce, cluster_test, cluster_test_existing]},
      {clustered_1_enforce, [], [configuration_test_1_enforce, single_node_test]},
      {clustered_1_enforce_nopolicy, [], [configuration_test_1_enforce_nopolicy, single_node_test]}].
 
@@ -74,7 +74,8 @@ init_per_group(Group, Config, NodesCount) ->
                     {log_log_level, debug},
                     {passive, true},
                     {exclusive, false},
-                    {policies, false}
+                    {policies, false},
+                    {existing, true}
                 ]}] ;
         clustered_3 -> [{rabbit, [{cluster_partition_handling, pause_minority}]}] ;
         clustered_1 -> [{seven_state_classic_b_gone, [
@@ -249,6 +250,33 @@ expect_works(declare_auto_delete_queue, Config, Ha) ->
     expect_works(declare_classic_queue, Config, Ha) ;
 expect_works(declare_classic_queue, #config{enforce = Enforce, pol = Pol}, Ha) -> %, Enforce, Pol, _) ->
     not (Enforce andalso (Ha orelse not Pol)).
+
+cluster_test_existing(Config) ->
+    Node1 = nodename(Config, 0),
+    NodeConfig = #config{
+        enforce = enforce =:= get_config(Config, enforcement_mode),
+        pol = get_config(Config, match_policies),
+        excl = get_config(Config, disable_exclusive_queues)
+    },
+
+    Queue = atom_to_binary(?FUNCTION_NAME),
+    {Connection, _Channel} = open_connection_and_channel(Config, Node1),
+    ok = rabbit_ct_broker_helpers:rpc(
+       Config, 0, rabbit_runtime_parameters, set,
+       [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"log">>, <<"acting-user">>]),
+    NodeConfigLog = #config{
+        enforce = false,
+        pol = get_config(Config, match_policies),
+        excl = get_config(Config, disable_exclusive_queues)
+    },
+    declare_classic_queue(NodeConfigLog, Connection, <<"ha.", Queue/binary, "_classic_enforce_mode">>, true),
+    
+    ok = rabbit_ct_broker_helpers:rpc(
+       Config, 0, rabbit_runtime_parameters, clear,
+       [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"acting-user">>]),
+    declare_classic_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_enforce_mode">>, true),
+
+    ok.
 
 only_cluster_test(Config) -> 
     Queue = atom_to_binary(?FUNCTION_NAME),

@@ -117,7 +117,7 @@ intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passiv
 %%                    ok = log_early_exit_type(Exclusive, FinalQType, QueueName, User, VHost),
 %%                    {Method, Content} ;
                 _ ->
-                    case rabbit_amqqueue:exists(rabbit_misc:r(VHost, queue, QueueName)) of
+                    case disable_existing_queues() =/= true andalso rabbit_amqqueue:exists(rabbit_misc:r(VHost, queue, QueueName)) of
                         true ->
                             passthrough(Exclusive, FinalQType, QueueName, User, VHost, fun log_existing_queue/5, Method, Content) ;
 %%                            ok = log_existing_queue(FinalQType, QueueName, User, VHost),
@@ -262,6 +262,9 @@ log_level(_) ->
 
 always_let_passive_declare() ->
     application:get_env(?APP, passive, true).
+
+disable_existing_queues() ->
+    application:get_env(?APP, existing, false).
 
 disable_exclusive_queues() ->
     application:get_env(?APP, exclusive, false).
