@@ -24,3 +24,4 @@
 
 /.vscode/
 erl_crash.dump
+test/integration/

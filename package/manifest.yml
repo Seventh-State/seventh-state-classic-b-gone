@@ -1,7 +1,7 @@
-name: seventh_state_classic_b_gone
-version: 1.0.1
+name: seven_state_classic_b_gone
+version: 1.0.0
 summary: Seventh State Classic-b-gone plugin packaged with the Seventh State extension framework
-artifact: seventh_state_classic_b_gone-1.0.1.ez
+artifact: seven_state_classic_b_gone-1.0.0.ez
 rabbitmq:
   min: 3.12.0
   max: 3.13.7

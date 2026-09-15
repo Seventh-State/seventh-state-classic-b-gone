@@ -1,7 +1,7 @@
 %%% @author: Seventh State <contact@seventhstate.io>
 %%% @copyright (C) 2025, Seventh State
 
--module(seven_classic_b_gone_SUITE).
+-module(seven_state_classic_b_gone_SUITE).
 
 -compile(export_all).
 
@@ -50,25 +50,26 @@ init_per_group(Group, Config, NodesCount) ->
                                       {net_ticktime, 3},
                                       {metadata_store, khepri}]),
     AdditionalConfig = case Group of 
-        clustered_1_enforce -> [{seven_classic_b_gone, [
+        clustered_1_enforce -> [{seven_state_classic_b_gone, [
                     {mode, enforce},
                     {log_log_level, warning},
                     {passive, false},
                     {exclusive, true},
-                    {new_log, "I am a log"},
+                    {new_log_enforce, "I am a log enforce ~p"},
+                    {new_log_log, "I am a log log ~s"},
                     {new_amqp_error, "I am ERROR"}
                 ]}] ;
-        clustered_1_enforce_nopolicy -> [{seven_classic_b_gone, [
+        clustered_1_enforce_nopolicy -> [{seven_state_classic_b_gone, [
                     {mode, enforce},
                     {log_log_level, warning},
                     {passive, false},
                     {exclusive, true},
-                    {new_log, "I am a log"},
+                    {new_log_enforce, "I am a log"},
                     {new_amqp_error, "I am ERROR"},
                     {policies, false}
                 ]}] ;
         clustered_3_enforce -> [{rabbit, [{cluster_partition_handling, pause_minority}]},
-                 {seven_classic_b_gone, [
+                 {seven_state_classic_b_gone, [
                     {mode, enforce},
                     {log_log_level, debug},
                     {passive, true},
@@ -76,7 +77,7 @@ init_per_group(Group, Config, NodesCount) ->
                     {policies, false}
                 ]}] ;
         clustered_3 -> [{rabbit, [{cluster_partition_handling, pause_minority}]}] ;
-        clustered_1 -> [{seven_classic_b_gone, [
+        clustered_1 -> [{seven_state_classic_b_gone, [
                 {mode, log},
                 {log_log_level, info}
             ]}]
@@ -112,7 +113,7 @@ get_config(Config, Node, Fun)
     when is_integer(Node) -> get_config(Config, Node, Fun, []).
 
 get_config(Config, Node, Fun, Args) ->
-    rabbit_ct_broker_helpers:rpc(Config, Node, seven_classic_b_gone_interceptor,
+    rabbit_ct_broker_helpers:rpc(Config, Node, seven_state_classic_b_gone_interceptor,
                                  Fun, Args).
 
 configuration_test_3(Config) ->
@@ -135,7 +136,8 @@ configuration_test_3_enforce(Config) ->
 configuration_test_1_enforce(Config) ->
     enforce = get_config(Config, enforcement_mode),
     warning = get_config(Config, log_level, [false]),
-    "I am a log" = get_config(Config, new_queue_log_message),
+    "I am a log enforce ~p" = get_config(Config, new_queue_log_message, [enforce]),
+    "I am a log log ~s" = get_config(Config, new_queue_log_message, [log]),
     "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
     false = get_config(Config, always_let_passive_declare),
     true = get_config(Config, disable_exclusive_queues),
@@ -145,7 +147,7 @@ configuration_test_1_enforce(Config) ->
 configuration_test_1_enforce_nopolicy(Config) ->
     enforce = get_config(Config, enforcement_mode),
     warning = get_config(Config, log_level, [false]),
-    "I am a log" = get_config(Config, new_queue_log_message),
+    "I am a log" = get_config(Config, new_queue_log_message, [enforce]),
     "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
     false = get_config(Config, always_let_passive_declare),
     true = get_config(Config, disable_exclusive_queues),
@@ -210,6 +212,33 @@ common_test(Config) ->
 
     declare_classic_queue(NodeConfig, Connection1, <<"ha-enabled">>, true),
     declare_classic_queue(NodeConfig, Connection1, <<"ha-disable">>, false),
+
+    % All this is testing the vhost param override
+    ok = rabbit_ct_broker_helpers:rpc(
+       Config, 0, rabbit_runtime_parameters, set,
+       [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"log">>, <<"acting-user">>]),
+
+    NodeConfigLog = #config{
+        enforce = false,
+        pol = get_config(Config, match_policies),
+        excl = get_config(Config, disable_exclusive_queues)
+    },
+
+    declare_classic_queue(NodeConfigLog, Connection, <<"ha.", Queue/binary, "_classic_log_mode">>, true),
+
+    ok = rabbit_ct_broker_helpers:rpc(
+       Config, 0, rabbit_runtime_parameters, clear,
+       [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"acting-user">>]),
+
+    declare_classic_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_original_mode">>, true),
+
+    ok = rabbit_ct_broker_helpers:rpc(
+       Config, 0, rabbit_runtime_parameters, set,
+       [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"enforce">>, <<"acting-user">>]),
+    
+    % This should not change the original enforcement mode (if config mode is log, it will stay log)
+    declare_classic_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_enforce_mode">>, true),
+
     ok.
 
 expect_works(declare_quorum_queue, _Config, _Ha) ->

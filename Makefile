@@ -1,11 +1,6 @@
-PROJECT = seventh_state_classic_b_gone
-PROJECT_DESCRIPTION = Disables Classic Queues Creation in RabbitMQ
-current_rmq_ref = v3.12.x
-# define PROJECT_ENV
-# []
-# endef
+include project.env
 
-DEPS = rabbit_common rabbit amqp_client rabbitmq_management
+DEPS = rabbit_common rabbit amqp_client rabbitmq_management prometheus rabbitmq_prometheus
 TEST_DEPS = rabbitmq_ct_helpers rabbitmq_ct_client_helpers
 
 DEP_EARLY_PLUGINS = rabbit_common/mk/rabbitmq-early-plugin.mk
@@ -16,9 +11,6 @@ DEP_PLUGINS = rabbit_common/mk/rabbitmq-plugin.mk
 
 ERLANG_MK_REPO = https://github.com/rabbitmq/erlang.mk.git
 ERLANG_MK_COMMIT = rabbitmq-tmp
-
-docker-release:
-	ci/build-plugin.sh
 
 include rabbitmq-components.mk
 include erlang.mk

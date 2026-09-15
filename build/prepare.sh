@@ -25,7 +25,7 @@ fi
 
 yq "${YQ_ARGS[@]}" "
     .version = \"${PKG_VERSION}\" |
-    .artifact = \"seventh_state_classic_b_gone-${PKG_VERSION}.ez\" |
+    .artifact = \"seven_state_classic_b_gone-${PKG_VERSION}.ez\" |
     .rabbitmq.min = \"${RABBITMQ_BASE_VERSION}\" |
     .rabbitmq.max = \"${RABBITMQ_BRANCH}\"
   " "$MANIFEST_FILE"

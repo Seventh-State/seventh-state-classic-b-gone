@@ -25,7 +25,7 @@ RUNTIME_DEPS = [
 rabbitmq_lib(
     app_description = "Priority Queue Extension for Quorum Queues",
     app_env = APP_ENV,
-    app_name = "seventh_state_classic_b_gone",
+    app_name = "seven_state_classic_b_gone",
     runtime_deps = RUNTIME_DEPS,
     deps = DEPS,
 )

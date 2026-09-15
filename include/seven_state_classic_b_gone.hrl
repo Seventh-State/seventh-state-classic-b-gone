@@ -6,8 +6,11 @@
 
 -define(DESC, "7S Classic-b-gone disables classic queues").
 -define(INTERCEPTOR, <<"7S Classic-b-gone Interceptor">>).
+-define(PARAMETER, <<"seven_state_classic_b_gone">>).
+-define(PARAMETER_NAME, <<"mode">>).
+-define(METRIC, seven_state_classic_b_gone_requests).
 
--define(APP, seven_classic_b_gone).
+-define(APP, seven_state_classic_b_gone).
 
 %% Macros for logging with module prefix
 -define(LOG(Level, Fmt, Args), logger:log(Level, "[~s] " ++ Fmt, [?MODULE | Args], #{domain => [?APP, audit]})).
