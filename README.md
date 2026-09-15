@@ -4,6 +4,20 @@ This plugin intercepts calls to queue.declare to prevent classic queues from bei
 
 (c) Seventh State 2026
 
+## Build
+
+This will generate the plugin file in plugins/
+
+```bash
+gmake dist DIST_AS_EZS=1 
+```
+
+## Tests
+
+```bash
+gmake tests
+```
+
 ## Build and Test Locally with Docker Compose
 
 You can build and test the plugin in a consistent environment using Docker Compose.
