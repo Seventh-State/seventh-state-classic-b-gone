@@ -13,7 +13,7 @@
 -define(APP, seven_state_classic_b_gone).
 
 %% Macros for logging with module prefix
--define(LOG(Level, Fmt, Args), logger:log(Level, "[~s] " ++ Fmt, [?MODULE | Args], #{domain => [?APP, audit]})).
+-define(LOG(Level, Fmt, Args), logger:log(Level, "[~s] " ++ Fmt, [?APP | Args], #{domain => [?APP, audit]})).
 
 -define(DBG(Fmt, Args), ?LOG(debug, Fmt, Args)).
 -define(INF(Fmt, Args), ?LOG(info, Fmt, Args)).

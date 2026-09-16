@@ -14,14 +14,16 @@ all() ->
      {group, clustered_1},
      {group, clustered_3_enforce},
      {group, clustered_1_enforce},
-     {group, clustered_1_enforce_nopolicy}].
+     {group, clustered_1_enforce_nopolicy},
+     {group, clustered_1_enforce_transient}].
 
 groups() ->
     [{clustered_3, [], [configuration_test_3, cluster_test]},
      {clustered_1, [], [configuration_test_1, single_node_test]},
      {clustered_3_enforce, [], [configuration_test_3_enforce, cluster_test, cluster_test_existing]},
      {clustered_1_enforce, [], [configuration_test_1_enforce, single_node_test]},
-     {clustered_1_enforce_nopolicy, [], [configuration_test_1_enforce_nopolicy, single_node_test]}].
+     {clustered_1_enforce_nopolicy, [], [configuration_test_1_enforce_nopolicy, single_node_test]},
+     {clustered_1_enforce_transient, [], [configuration_test_1_enforce_transient, cluster_test_transient]}].
 
 %% -------------------------------------------------------------------
 %% Test suite setup/teardown
@@ -55,17 +57,23 @@ init_per_group(Group, Config, NodesCount) ->
                     {log_log_level, warning},
                     {passive, false},
                     {exclusive, true},
-                    {new_log_enforce, "I am a log enforce ~p"},
-                    {new_log_log, "I am a log log ~s"},
-                    {new_amqp_error, "I am ERROR"}
+                    {new_queue_enforce, "I am a log enforce ~p"},
+                    {new_queue_log, "I am a log log ~s"},
+                    {classic_mirrored_queues_disabled_error, "I am ERROR"},
+                    {exclusive_queues_disabled_error, "ERROR am I"}
+                ]}] ;
+        clustered_1_enforce_transient -> [{seven_state_classic_b_gone, [
+                    {mode, enforce},
+                    {log_log_level, warning},
+                    {transient, true}
                 ]}] ;
         clustered_1_enforce_nopolicy -> [{seven_state_classic_b_gone, [
                     {mode, enforce},
                     {log_log_level, warning},
                     {passive, false},
                     {exclusive, true},
-                    {new_log_enforce, "I am a log"},
-                    {new_amqp_error, "I am ERROR"},
+                    {new_queue_enforce, "I am a log"},
+                    {all_classic_queues_disabled_error, "am ERROR I"},
                     {policies, false}
                 ]}] ;
         clustered_3_enforce -> [{rabbit, [{cluster_partition_handling, pause_minority}]},
@@ -139,7 +147,8 @@ configuration_test_1_enforce(Config) ->
     warning = get_config(Config, log_level, [false]),
     "I am a log enforce ~p" = get_config(Config, new_queue_log_message, [enforce]),
     "I am a log log ~s" = get_config(Config, new_queue_log_message, [log]),
-    "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
+    "I am ERROR" = get_config(Config, translate_error, [classic_mirrored_queues_disabled]),
+    "ERROR am I" = get_config(Config, translate_error, [exclusive_queues_disabled]),
     false = get_config(Config, always_let_passive_declare),
     true = get_config(Config, disable_exclusive_queues),
     true = get_config(Config, match_policies),
@@ -149,10 +158,15 @@ configuration_test_1_enforce_nopolicy(Config) ->
     enforce = get_config(Config, enforcement_mode),
     warning = get_config(Config, log_level, [false]),
     "I am a log" = get_config(Config, new_queue_log_message, [enforce]),
-    "I am ERROR" = get_config(Config, new_queue_amqp_error_text),
+    "am ERROR I" = get_config(Config, translate_error, [all_classic_queues_disabled]),
     false = get_config(Config, always_let_passive_declare),
     true = get_config(Config, disable_exclusive_queues),
     false = get_config(Config, match_policies),
+    false = get_config(Config, allow_transient_queues),
+    ok.
+
+configuration_test_1_enforce_transient(Config) ->
+    true = get_config(Config, allow_transient_queues),
     ok.
 
 cluster_test(Config) ->
@@ -166,7 +180,8 @@ single_node_test(Config) ->
 -record(config, {
     enforce,
     pol,
-    excl
+    excl,
+    trans
 }).
 
 common_test(Config) ->
@@ -174,7 +189,8 @@ common_test(Config) ->
     NodeConfig = #config{
         enforce = enforce =:= get_config(Config, enforcement_mode),
         pol = get_config(Config, match_policies),
-        excl = get_config(Config, disable_exclusive_queues)
+        excl = get_config(Config, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
 
     Queue = atom_to_binary(?FUNCTION_NAME),
@@ -187,6 +203,9 @@ common_test(Config) ->
     declare_exclusive_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_exclusive">>, false),
     %% except exclusive is not HA
     declare_exclusive_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_exclusive">>, true),
+    %% transient has HA
+    declare_transient_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_transient">>, true),
+    declare_transient_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_transient">>, false),
 
     declare_auto_delete_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_classic_ad1">>, true, [{<<"x-queue-type">>, longstr, <<"classic">>}]),
     declare_auto_delete_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_classic_ad1">>, false, [{<<"x-queue-type">>, longstr, <<"classic">>}]),
@@ -222,7 +241,8 @@ common_test(Config) ->
     NodeConfigLog = #config{
         enforce = false,
         pol = get_config(Config, match_policies),
-        excl = get_config(Config, disable_exclusive_queues)
+        excl = get_config(Config, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
 
     declare_classic_queue(NodeConfigLog, Connection, <<"ha.", Queue/binary, "_classic_log_mode">>, true),
@@ -244,30 +264,53 @@ common_test(Config) ->
 
 expect_works(declare_quorum_queue, _Config, _Ha) ->
     true;
-expect_works(declare_exclusive_queue, #config{enforce = Enforce, excl = ExclDisabled}, _Ha) -> %, _, Enforce, _, ExclDisabled) ->
+expect_works(declare_exclusive_queue, #config{enforce = Enforce, excl = ExclDisabled}, _Ha) ->
     not (Enforce andalso ExclDisabled);
 expect_works(declare_auto_delete_queue, Config, Ha) -> 
     expect_works(declare_classic_queue, Config, Ha) ;
-expect_works(declare_classic_queue, #config{enforce = Enforce, pol = Pol}, Ha) -> %, Enforce, Pol, _) ->
+expect_works(declare_transient_queue, #config{enforce = Enforce, pol = Pol, trans = Transient}, Ha) ->
+    Transient orelse not (Enforce andalso ((Ha orelse not Pol))) ;
+expect_works(declare_classic_queue, #config{enforce = Enforce, pol = Pol}, Ha) ->
     not (Enforce andalso (Ha orelse not Pol)).
+
+cluster_test_transient(Config) -> 
+    Node1 = nodename(Config, 0),
+    NodeConfig = #config{
+        enforce = enforce =:= get_config(Config, enforcement_mode),
+        pol = get_config(Config, match_policies),
+        excl = get_config(Config, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
+    },
+    Queue = atom_to_binary(?FUNCTION_NAME),
+    {Connection, _Channel} = open_connection_and_channel(Config, Node1),
+
+    declare_transient_queue(NodeConfig, Connection, <<"ha.", Queue/binary, "_transient">>, true),
+    declare_transient_queue(NodeConfig, Connection, <<"ha-dis.", Queue/binary, "_transient">>, false),
+    
+    ok.
 
 cluster_test_existing(Config) ->
     Node1 = nodename(Config, 0),
     NodeConfig = #config{
         enforce = enforce =:= get_config(Config, enforcement_mode),
         pol = get_config(Config, match_policies),
-        excl = get_config(Config, disable_exclusive_queues)
+        excl = get_config(Config, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
 
     Queue = atom_to_binary(?FUNCTION_NAME),
     {Connection, _Channel} = open_connection_and_channel(Config, Node1),
+
+    %% NB: The only way to test existing queue declare is to have a cluster in enforce mode in the config,
+    %% which would prevent us from creating the queue, but we can disable it by setting the vhost to log mode
     ok = rabbit_ct_broker_helpers:rpc(
        Config, 0, rabbit_runtime_parameters, set,
        [<<"/">>, <<"seven_state_classic_b_gone">>, <<"mode">>, <<"log">>, <<"acting-user">>]),
     NodeConfigLog = #config{
         enforce = false,
         pol = get_config(Config, match_policies),
-        excl = get_config(Config, disable_exclusive_queues)
+        excl = get_config(Config, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
     declare_classic_queue(NodeConfigLog, Connection, <<"ha.", Queue/binary, "_classic_enforce_mode">>, true),
     
@@ -283,12 +326,14 @@ only_cluster_test(Config) ->
     Node2Config = #config{
         enforce = enforce =:= get_config(Config, 1, enforcement_mode),
         pol = get_config(Config, 1, match_policies),
-        excl = get_config(Config, 1, disable_exclusive_queues)
+        excl = get_config(Config, 1, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
     Node3Config = #config{
         enforce = enforce =:= get_config(Config, 2, enforcement_mode),
         pol = get_config(Config, 2, match_policies),
-        excl = get_config(Config, 2, disable_exclusive_queues)
+        excl = get_config(Config, 2, disable_exclusive_queues),
+        trans = get_config(Config, allow_transient_queues)
     },
     Node2 = nodename(Config, 1),
     Connection2 = open_connection(Config, Node2),
@@ -314,6 +359,16 @@ declare_classic_queue(Config, Connection, Queue, Ha, Args) ->
     run_declare(expect_works(?FUNCTION_NAME, Config, Ha), Connection, #'queue.declare'{queue = Queue,
                                         durable = true,
                                         auto_delete = false,
+                                        arguments = Args}).
+
+declare_transient_queue(Config, Connection, Queue, Ha) ->
+    declare_transient_queue(Config, Connection, Queue, Ha, []).
+
+declare_transient_queue(Config, Connection, Queue, Ha, Args) ->
+    run_declare(expect_works(?FUNCTION_NAME, Config, Ha), Connection, #'queue.declare'{queue = Queue,
+                                        durable = false,
+                                        auto_delete = false,
+                                        exclusive = false,
                                         arguments = Args}).
 
 declare_exclusive_queue(Config, Connection, Queue, Ha) ->

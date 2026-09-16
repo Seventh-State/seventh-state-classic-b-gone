@@ -37,22 +37,56 @@
     {validators, []}]}.
 
 %% log message: existing queues
-{mapping, "seven_state_classic_b_gone.existing_queue_log_message", "seven_state_classic_b_gone.existing_log", [
+{mapping, "seven_state_classic_b_gone.existing_queue_log_message", "seven_state_classic_b_gone.existing_queue_log", [
     {datatype, string},
     {validators, []}]}.
 
-%% log message: new declare
-{mapping, "seven_state_classic_b_gone.new_queue_log_log_message", "seven_state_classic_b_gone.new_log_log", [
+%% log message: allowed queue type
+{mapping, "seven_state_classic_b_gone.allowed_queue_type_log_message", "seven_state_classic_b_gone.allowed_queue_type_log", [
     {datatype, string},
     {validators, []}]}.
 
-%% log message: new declare
-{mapping, "seven_state_classic_b_gone.new_queue_log_enforce_message", "seven_state_classic_b_gone.new_log_enforce", [
+%% log message: passive declare
+{mapping, "seven_state_classic_b_gone.passive_declare_log_message", "seven_state_classic_b_gone.passive_declare_log", [
     {datatype, string},
     {validators, []}]}.
 
-%% AMQP error: new declare
-{mapping, "seven_state_classic_b_gone.new_queue_amqp_error_text", "seven_state_classic_b_gone.new_amqp_error", [
+%% log message: new declare blocked when mode =:= log
+{mapping, "seven_state_classic_b_gone.new_queue_log_message", "seven_state_classic_b_gone.new_queue_log", [
     {datatype, string},
     {validators, []}]}.
 
+%% log message: new declare blocked when mode =:= enforce
+{mapping, "seven_state_classic_b_gone.new_queue_log_enforce_message", "seven_state_classic_b_gone.new_queue_enforce", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% log message: declare classic mirrored disabled
+{mapping, "seven_state_classic_b_gone.classic_mirrored_queues_disabled_log", "seven_state_classic_b_gone.classic_mirrored_queues_disabled_log", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% log message: declare all classic disabled
+{mapping, "seven_state_classic_b_gone.all_classic_queues_disabled_log", "seven_state_classic_b_gone.all_classic_queues_disabled_log", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% log message: declare exclusive classic disabled
+{mapping, "seven_state_classic_b_gone.exclusive_queues_disabled_log", "seven_state_classic_b_gone.exclusive_queues_disabled_log", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% AMQP error: declare classic mirrored disabled
+{mapping, "seven_state_classic_b_gone.amqp_error_classic_mirrored_queues_disabled_message", "seven_state_classic_b_gone.classic_mirrored_queues_disabled_error", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% AMQP error: declare all classic disabled
+{mapping, "seven_state_classic_b_gone.amqp_error_all_classic_queues_disabled_message", "seven_state_classic_b_gone.all_classic_queues_disabled_error", [
+    {datatype, string},
+    {validators, []}]}.
+
+%% AMQP error: declare exclusive classic disabled
+{mapping, "seven_state_classic_b_gone.amqp_error_exclusive_queues_disabled_message", "seven_state_classic_b_gone.exclusive_queues_disabled_error", [
+    {datatype, string},
+    {validators, []}]}.

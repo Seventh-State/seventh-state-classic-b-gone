@@ -45,7 +45,8 @@
 
 -type enforce_mode() :: log | enforce.
 -type maybe_enforce_mode() :: enforce_mode() | not_found.
-
+-type block_reasons() :: exclusive_queues_disabled | classic_mirrored_queues_disabled | all_classic_queues_disabled.
+-type reasons() :: block_reasons() | allowed_queue_type | existing_queue.
 -export_type([enforce_mode/0]).
 
 %% Boot step mfa
@@ -74,10 +75,11 @@ init(Channel) ->
         DefaultQueueType ->
             rabbit_queue_type:discover(DefaultQueueType)    
     end,
+    {user, User, _, _} = rabbit_channel:get_user(Channel),
     #channelRecord{
         vhost = VHostName,
         dqt = Dqt,
-        user = rabbit_channel:get_user(Channel)
+        user = User
     }.
 
 %% Parameters validate
@@ -103,25 +105,25 @@ applies_to()  -> ['queue.declare'].
 
 %% Interceptor
 -spec intercept(#'queue.declare'{}, rabbit_types:content() | 'none', #channelRecord{}) -> {rabbit_types:content() | 'none', #channelRecord{}}.
-intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passive, exclusive = Exclusive} = Method, Content, _State = #channelRecord{vhost = VHost, dqt = Dqt, user = User}) ->
+intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passive, exclusive = Exclusive, durable = Durable} = Method, Content, _State = #channelRecord{vhost = VHost, dqt = Dqt, user = User}) ->
     EnforceMode = compute_actual_enforcement_mode(VHost),
     QTypeArg0 = rabbit_misc:table_lookup(Args, <<"x-queue-type">>),
     FinalQType = case QTypeArg0 of 
         undefined -> Dqt;
         {_Type, QTypeArg} -> rabbit_queue_type:discover(QTypeArg)
     end,
-    ok = log_intercept(VHost, User, FinalQType, QueueName, Args, Passive, Exclusive),
+    ok = log_intercept(VHost, User, FinalQType, QueueName, Args, Passive, Exclusive, not Durable),
     case early_exit_passive(Passive) of
         true ->
-            passthrough(Exclusive, FinalQType, QueueName, User, VHost, fun log_early_exit_passive/5, Method, Content) ;
+            passthrough(Exclusive, not Durable, FinalQType, QueueName, User, VHost, fun log_early_exit_passive/6, Method, Content) ;
         false ->
-            case early_exit_type(FinalQType) orelse early_exit_exclusive(Exclusive) of
+            case early_exit_type(FinalQType) orelse early_exit_exclusive(Exclusive) orelse early_exit_transient(not Durable) of
                 true -> 
-                    passthrough(Exclusive, FinalQType, QueueName, User, VHost, fun log_early_exit_type/5, Method, Content) ;
+                    passthrough(Exclusive, not Durable, FinalQType, QueueName, User, VHost, fun log_early_exit_type/6, Method, Content) ;
                 _ ->
                     case disable_existing_queues() =/= true andalso rabbit_amqqueue:exists(rabbit_misc:r(VHost, queue, QueueName)) of
                         true ->
-                            passthrough(Exclusive, FinalQType, QueueName, User, VHost, fun log_existing_queue/5, Method, Content) ;
+                            passthrough(Exclusive, not Durable, FinalQType, QueueName, User, VHost, fun log_existing_queue/6, Method, Content) ;
                         _ ->
                             case disable_exclusive_queues() andalso Exclusive of
                                 true ->
@@ -141,7 +143,7 @@ intercept(#'queue.declare'{arguments = Args, queue = QueueName, passive = Passiv
                                         skip -> 
                                             enforce(EnforceMode, FinalQType, QueueName, User, VHost, all_classic_queues_disabled, Method, Content) ;
                                         false ->
-                                            passthrough(Exclusive, FinalQType, QueueName, User, VHost, fun log_enforcement_none/5, Method, Content) ;
+                                            passthrough(Exclusive, not Durable, FinalQType, QueueName, User, VHost, fun log_enforcement_none/6, Method, Content) ;
                                         true ->
                                             enforce(EnforceMode, FinalQType, QueueName, User, VHost, classic_mirrored_queues_disabled, Method, Content)
                                     end
@@ -156,26 +158,26 @@ intercept(Method, Content, _) -> {Method, Content}.
 %% Helpers
 
 %% Log and passthrough
--spec passthrough(boolean(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), fun((boolean(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> ok), #'queue.declare'{}, 'none') -> {rabbit_types:content() | 'none', #channelRecord{}}.
-passthrough(Exclusive, QueueType, QueueName, User, VHost, LogFunc, Method, Content) ->
-    ok = LogFunc(Exclusive, QueueType, QueueName, User, VHost),
+-spec passthrough(boolean(), boolean(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), fun((boolean(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> ok), #'queue.declare'{}, 'none') -> {rabbit_types:content() | 'none', #channelRecord{}}.
+passthrough(Exclusive, Transient, QueueType, QueueName, User, VHost, LogFunc, Method, Content) ->
+    ok = LogFunc(Exclusive, Transient, QueueType, QueueName, User, VHost),
     {Method, Content}.
 
 %% Log and passthrough (in log mode) or enforce (in enforce mode)
--spec enforce(atom(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), string(), rabbit_types:content() | 'none', #channelRecord{}) -> {rabbit_types:content() | 'none', #channelRecord{}}.
+-spec enforce(maybe_enforce_mode(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), block_reasons(), rabbit_types:content() | 'none', #channelRecord{}) -> {rabbit_types:content() | 'none', #channelRecord{}}.
 enforce(EnforceMode, QueueType, QueueName, User, VHost, Reason, Method, Content) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, EnforceMode),
     ?LOG(log_level(EnforceMode), "~ts User '~p' declared queue '~ts' (~p) in vhost '~p' - reason '~ts'", [new_queue_log_message(EnforceMode), User, QueueName, QueueType, VHost, translate(Reason)]),
-    enforce(EnforceMode, Method, Content).
+    enforce(EnforceMode, Reason, Method, Content).
 
--spec enforce(atom(), rabbit_types:content() | 'none', #channelRecord{}) -> rabbit_types:amqp_error() | {rabbit_types:content() | 'none', #channelRecord{}}.
-enforce(enforce, _, _) -> 
+-spec enforce(maybe_enforce_mode(), block_reasons(), rabbit_types:content() | 'none', #channelRecord{}) -> rabbit_types:amqp_error() | {rabbit_types:content() | 'none', #channelRecord{}}.
+enforce(enforce, Reason, _, _) -> 
     rabbit_misc:amqp_error(
         'precondition_failed',
-        new_queue_amqp_error_text(),
+        translate_error(Reason),
         [],
         'queue.declare') ;
-enforce(_, Method, Content) -> {Method, Content}.
+enforce(_, _, Method, Content) -> {Method, Content}.
 
 -spec compute_actual_enforcement_mode(rabbit_types:vhost()) -> enforce_mode().
 compute_actual_enforcement_mode(VHost) ->
@@ -241,43 +243,53 @@ early_exit_exclusive(true) ->
     disable_exclusive_queues() =:= false;
 early_exit_exclusive(_) -> false.
 
+-spec early_exit_transient(boolean()) -> (boolean()).
+early_exit_transient(true) ->
+    allow_transient_queues() =:= true;
+early_exit_transient(_) -> false.
+
 %% Logging 
 
--spec log_early_exit_passive(boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
-log_early_exit_passive(_, QueueType, QueueName, User, VHost) ->
+-spec log_early_exit_passive(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
+log_early_exit_passive(_, _, QueueType, QueueName, User, VHost) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, passive),
-    log_early_exit("Passive declare:", QueueType, QueueName, User, VHost).
+    log_early_exit(passive, "", QueueType, QueueName, User, VHost).
 
--spec log_early_exit_type(boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
-log_early_exit_type(true, QueueType, QueueName, User, VHost) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, exclusive),
-    log_early_exit("Allowed Queue Type (exclusive):", QueueType, QueueName, User, VHost);
-log_early_exit_type(false, QueueType, QueueName, User, VHost) ->
+-spec log_early_exit_type(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
+log_early_exit_type(false, false, QueueType, QueueName, User, VHost) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, type),
-    log_early_exit("Allowed Queue Type:", QueueType, QueueName, User, VHost).
+    log_early_exit(allowed_queue_type, "", QueueType, QueueName, User, VHost) ;
+log_early_exit_type(Exclusive, Transient, QueueType, QueueName, User, VHost) ->
+    Category = case Exclusive of
+        true -> exclusive ;
+        _ -> transient
+    end,
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, Category),
+    log_early_exit(allowed_queue_type, lists:flatten(io_lib:format("(~ts~ts)", [transient_text(Transient), exclusive_text(Exclusive)])), QueueType, QueueName, User, VHost).
 
--spec log_existing_queue(boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
-log_existing_queue(_, QueueType, QueueName, User, VHost) ->
+-spec log_existing_queue(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
+log_existing_queue(_, _, QueueType, QueueName, User, VHost) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, existing),
-    log_early_exit("Existing queue:", QueueType, QueueName, User, VHost).
+    log_early_exit(existing_queue, "", QueueType, QueueName, User, VHost).
 
--spec log_enforcement_none(boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
-log_enforcement_none(_, QueueType, QueueName, User, VHost) ->
+-spec log_enforcement_none(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
+log_enforcement_none(_, _, QueueType, QueueName, User, VHost) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, non_mirrored),
-    log_early_exit("Allowed Classic Non-Mirrored Queue:", QueueType, QueueName, User, VHost).
+    log_early_exit(allowed_queue_type, "(non-mirrored)", QueueType, QueueName, User, VHost).
 
--spec log_early_exit(string(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
-log_early_exit(Text, QueueType, QueueName, User, VHost) ->
-    ?DBG("~p User '~p' declared queue '~p' (~p) in vhost '~p'", [Text, User, QueueName, QueueType, VHost]).
+-spec log_early_exit(block_reasons(), string(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
+log_early_exit(TextKey, ExtraText, QueueType, QueueName, User, VHost) ->
+    ?DBG("~ts~ts: User '~p' declared queue '~ts' (~ts) in vhost '~ts'", [translate(TextKey), ExtraText, User, QueueName, QueueType, VHost]).
 
--spec log_intercept(rabbit_types:vhost(), rabbit_types:username(), rabbit_queue_type:queue_type(), binary(), proplists:proplist(), boolean(), boolean()) -> ok.
-log_intercept(VHost, User, QueueType, QueueName, Args, Passive, Exclusive) ->
-    ?DBG("Entering intercept for Virtual Host '~p', User '~p'~p declaring '~p' of type~p '~p'. Extra queue args: ~p", [
+-spec log_intercept(rabbit_types:vhost(), rabbit_types:username(), rabbit_queue_type:queue_type(), binary(), proplists:proplist(), boolean(), boolean(), boolean()) -> ok.
+log_intercept(VHost, User, QueueType, QueueName, Args, Passive, Exclusive, Transient) ->
+    ?DBG("Entering intercept for Virtual Host '~ts', User '~p'~ts declaring '~ts' of type~ts~ts '~p'. Extra queue args: ~p", [
         VHost,
         User,
         passive_text(Passive),
         QueueName,
         exclusive_text(Exclusive),
+        transient_text(Transient),
         QueueType,
         Args
         ]),
@@ -292,6 +304,10 @@ passive_text(_) -> "".
 -spec exclusive_text(boolean()) -> string().
 exclusive_text(true) -> " exclusive";
 exclusive_text(_) -> "".
+
+-spec transient_text(boolean()) -> string().
+transient_text(true) -> " transient";
+transient_text(_) -> "".
 
 -spec log_level(maybe_enforce_mode()) -> logger:level().
 log_level(enforce) ->
@@ -311,30 +327,42 @@ disable_existing_queues() ->
 disable_exclusive_queues() ->
     application:get_env(?APP, exclusive, false).
 
+-spec allow_transient_queues() -> boolean().
+allow_transient_queues() -> 
+    application:get_env(?APP, transient, false).
+
 -spec enforcement_mode() -> enforce_mode().
 enforcement_mode() ->
     application:get_env(?APP, mode, log).
 
 -spec new_queue_log_message(maybe_enforce_mode()) -> string().
 new_queue_log_message(enforce) ->
-    application:get_env(?APP, new_log_enforce, "New queue declare blocked by enforcement: ") ;
+    application:get_env(?APP, new_queue_enforce, "New queue declare blocked by enforcement: ") ;
 new_queue_log_message(_) ->
-    application:get_env(?APP, new_log_log, "New queue declare flagged for enforcement: ").
+    application:get_env(?APP, new_queue_log, "New queue declare flagged for enforcement: ").
 
--spec new_queue_amqp_error_text() -> string().
-new_queue_amqp_error_text() ->
-    application:get_env(?APP, new_amqp_error, "New classic queues are not allowed on this cluster.").
+-spec translate_error(block_reasons()) -> string().
+translate_error(classic_mirrored_queues_disabled) ->
+    application:get_env(?APP, classic_mirrored_queues_disabled_error, "New classic mirrored queues are not allowed on this cluster.") ;
+translate_error(all_classic_queues_disabled) ->
+    application:get_env(?APP, all_classic_queues_disabled_error, "New classic queues are not allowed on this cluster.") ;
+translate_error(exclusive_queues_disabled) ->
+    application:get_env(?APP, exclusive_queues_disabled_error, "New exclusive classic queues are not allowed on this cluster.").
 
 -spec match_policies() -> boolean().
 match_policies() ->
     application:get_env(?APP, policies, true).
 
--spec translate(atom()) -> string().
+-spec translate(reasons()) -> string().
+translate(passive) -> 
+    application:get_env(?APP, passive_declare_log, "Passive declare") ;
+translate(allowed_queue_type) ->
+    application:get_env(?APP, allowed_queue_type_log, "Allowed queue type") ;
+translate(existing_queue) ->
+    application:get_env(?APP, existing_queue_log, "Allowed existing queue") ;
 translate(classic_mirrored_queues_disabled) ->
-    application:get_env(?APP, classic_mirrored_queues_disabled, "Classic Mirrored queues are disabled on this cluster") ;
-
+    application:get_env(?APP, classic_mirrored_queues_disabled_log, "Classic mirrored queues are disabled on this cluster") ;
 translate(all_classic_queues_disabled) ->
-    application:get_env(?APP, all_classic_queues_disabled, "All classic queues are disabled on this cluster") ;
-
+    application:get_env(?APP, all_classic_queues_disabled_log, "All classic queues are disabled on this cluster") ;
 translate(exclusive_queues_disabled) ->
-    application:get_env(?APP, exclusive_queues_disabled, "Exclusive queues are disabled on this cluster").
+    application:get_env(?APP, exclusive_queues_disabled_log, "Exclusive queues are disabled on this cluster").

@@ -110,25 +110,67 @@
     {existingmessage,
         "seven_state_classic_b_gone.existing_queue_log_message = Message",
         [{seven_state_classic_b_gone, [
-            {existing_log, "Message"}
+            {existing_queue_log, "Message"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {allowedqueuetype,
+        "seven_state_classic_b_gone.allowed_queue_type_log_message = Message",
+        [{seven_state_classic_b_gone, [
+            {allowed_queue_type_log, "Message"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {passivemessage,
+        "seven_state_classic_b_gone.passive_declare_log_message = Message",
+        [{seven_state_classic_b_gone, [
+            {passive_declare_log, "Message"}
         ]}],
         [seven_state_classic_b_gone]},
     {newlogmessage,
-        "seven_state_classic_b_gone.new_queue_log_log_message = Message",
+        "seven_state_classic_b_gone.new_queue_log_message = Message",
         [{seven_state_classic_b_gone, [
-            {new_log_log, "Message"}
+            {new_queue_log, "Message"}
         ]}],
         [seven_state_classic_b_gone]},
     {newlogenforcemessage,
         "seven_state_classic_b_gone.new_queue_log_enforce_message = Message",
         [{seven_state_classic_b_gone, [
-            {new_log_enforce, "Message"}
+            {new_queue_enforce, "Message"}
         ]}],
         [seven_state_classic_b_gone]},
-    {newerrorenforcemessage,
-        "seven_state_classic_b_gone.new_queue_amqp_error_text = Message space",
+    {classic_mirrored_queues_disabled_log,
+        "seven_state_classic_b_gone.classic_mirrored_queues_disabled_log = Message space",
         [{seven_state_classic_b_gone, [
-            {new_amqp_error, "Message space"}
+            {classic_mirrored_queues_disabled_log, "Message space"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {all_classic_queues_disabled_log,
+        "seven_state_classic_b_gone.all_classic_queues_disabled_log = Message space",
+        [{seven_state_classic_b_gone, [
+            {all_classic_queues_disabled_log, "Message space"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {exclusive_queues_disabled_log,
+        "seven_state_classic_b_gone.exclusive_queues_disabled_log = Message space",
+        [{seven_state_classic_b_gone, [
+            {exclusive_queues_disabled_log, "Message space"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {classic_mirrored_queues_disabled_error,
+        "seven_state_classic_b_gone.amqp_error_classic_mirrored_queues_disabled_message = Message space",
+        [{seven_state_classic_b_gone, [
+            {classic_mirrored_queues_disabled_error, "Message space"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {all_classic_queues_disabled_error,
+        "seven_state_classic_b_gone.amqp_error_all_classic_queues_disabled_message = Message space",
+        [{seven_state_classic_b_gone, [
+            {all_classic_queues_disabled_error, "Message space"}
+        ]}],
+        [seven_state_classic_b_gone]},
+    {exclusive_queues_disabled_error,
+        "seven_state_classic_b_gone.amqp_error_exclusive_queues_disabled_message = Message space",
+        [{seven_state_classic_b_gone, [
+            {exclusive_queues_disabled_error, "Message space"}
         ]}],
         [seven_state_classic_b_gone]}
 ].
