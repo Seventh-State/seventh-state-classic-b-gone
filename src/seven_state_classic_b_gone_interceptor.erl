@@ -166,7 +166,7 @@ passthrough(Exclusive, Transient, QueueType, QueueName, User, VHost, LogFunc, Me
 %% Log and passthrough (in log mode) or enforce (in enforce mode)
 -spec enforce(maybe_enforce_mode(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), block_reasons(), rabbit_types:content() | 'none', #channelRecord{}) -> {rabbit_types:content() | 'none', #channelRecord{}}.
 enforce(EnforceMode, QueueType, QueueName, User, VHost, Reason, Method, Content) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, EnforceMode),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, EnforceMode, translate_for_metric(Reason)),
     ?LOG(log_level(EnforceMode), "~ts User '~p' declared queue '~ts' (~p) in vhost '~p' - reason '~ts'", [new_queue_log_message(EnforceMode), User, QueueName, QueueType, VHost, translate(Reason)]),
     enforce(EnforceMode, Reason, Method, Content).
 
@@ -252,29 +252,29 @@ early_exit_transient(_) -> false.
 
 -spec log_early_exit_passive(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
 log_early_exit_passive(_, _, QueueType, QueueName, User, VHost) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, passive),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, allow, passive),
     log_early_exit(passive, "", QueueType, QueueName, User, VHost).
 
 -spec log_early_exit_type(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
 log_early_exit_type(false, false, QueueType, QueueName, User, VHost) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, type),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, allow, type),
     log_early_exit(allowed_queue_type, "", QueueType, QueueName, User, VHost) ;
 log_early_exit_type(Exclusive, Transient, QueueType, QueueName, User, VHost) ->
     Category = case Exclusive of
         true -> exclusive ;
         _ -> transient
     end,
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, Category),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, allow, Category),
     log_early_exit(allowed_queue_type, lists:flatten(io_lib:format("(~ts~ts)", [transient_text(Transient), exclusive_text(Exclusive)])), QueueType, QueueName, User, VHost).
 
 -spec log_existing_queue(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
 log_existing_queue(_, _, QueueType, QueueName, User, VHost) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, existing),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, allow, existing),
     log_early_exit(existing_queue, "", QueueType, QueueName, User, VHost).
 
 -spec log_enforcement_none(boolean(), boolean(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
 log_enforcement_none(_, _, QueueType, QueueName, User, VHost) ->
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, non_mirrored),
+    ok = seven_state_classic_b_gone_prometheus:count(VHost, allow, non_mirrored),
     log_early_exit(allowed_queue_type, "(non-mirrored)", QueueType, QueueName, User, VHost).
 
 -spec log_early_exit(block_reasons(), string(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
@@ -293,7 +293,7 @@ log_intercept(VHost, User, QueueType, QueueName, Args, Passive, Exclusive, Trans
         QueueType,
         Args
         ]),
-    ok = seven_state_classic_b_gone_prometheus:count(VHost, seen).
+    ok = seven_state_classic_b_gone_prometheus:count_inbound(VHost).
 
 %% Configuration
 
@@ -366,3 +366,11 @@ translate(all_classic_queues_disabled) ->
     application:get_env(?APP, all_classic_queues_disabled_log, "All classic queues are disabled on this cluster") ;
 translate(exclusive_queues_disabled) ->
     application:get_env(?APP, exclusive_queues_disabled_log, "Exclusive queues are disabled on this cluster").
+
+-spec translate_for_metric(block_reasons()) -> seven_state_classic_b_gone_prometheus:enforce_reason().
+translate_for_metric(classic_mirrored_queues_disabled) ->
+    mirrored ;
+translate_for_metric(all_classic_queues_disabled) ->
+    classic ;
+translate_for_metric(exclusive_queues_disabled) ->
+    exclusive.

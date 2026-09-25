@@ -10,7 +10,8 @@
 
 -export([declare_metrics/0,
          undeclare_metrics/0,
-         count/2]).
+         count/3,
+         count_inbound/1]).
 
 -behaviour(prometheus_collector).
 -export([deregister_cleanup/1,
@@ -20,7 +21,9 @@
 -import(prometheus_model_helpers, [create_mf/5,
                                    gauge_metric/2]).
 
--type count_status() :: seven_state_classic_b_gone_interceptor:enforce_mode() | passive | exclusive | type | existing | non_mirrored | seen.
+-type allow_reason() :: passive | exclusive | type | existing | non_mirrored | classic | transient.
+-type enforce_reason() :: mirrored | classic | exclusive.
+-export_type([enforce_reason/0]).
 
 -spec collect_mf(prometheus_registry:registry(), fun()) -> ok.
 collect_mf(_Registry, _Callback) ->
@@ -34,8 +37,11 @@ collect_metrics(_, Val) ->
 -spec declare_metrics() -> ok.
 declare_metrics() ->
     true = prometheus_counter:declare([{name, ?METRIC},
-                            {labels, [vhost, status]},
-                            {help, "Classic-b-gone queries intercepted"}]),
+                            {labels, [vhost, outcome, reason]},
+                            {help, "Total queue.declare requests classified by the classic-b-gone interceptor, by outcome and reason"}]),
+    true = prometheus_counter:declare([{name, ?METRIC_INBOUND},
+                            {labels, [vhost]},
+                            {help, "Total queue.declare requests received by the classic-b-gone interceptor"}]),
     ok.
 
 -spec deregister_cleanup(prometheus_registry:registry()) -> ok.
@@ -46,8 +52,14 @@ deregister_cleanup(_) ->
 -spec undeclare_metrics() -> ok.
 undeclare_metrics() ->
     {true, _} = prometheus_counter:deregister(?METRIC),
+    {true, _} = prometheus_counter:deregister(?METRIC_INBOUND),
     ok.
 
--spec count(binary(), count_status()) -> ok.
-count(Vhost, Status) ->
-    ok = prometheus_counter:inc(?METRIC, [Vhost, Status]).
+-spec count_inbound(binary()) -> ok.
+count_inbound(Vhost) ->
+    ok = prometheus_counter:inc(?METRIC_INBOUND, [Vhost]).
+
+-spec count(binary(), allow, allow_reason()) -> ok ;
+           (binary(), seven_state_classic_b_gone_interceptor:enforce_mode(), enforce_reason()) -> ok.
+count(Vhost, Outcome, Reason) ->
+    ok = prometheus_counter:inc(?METRIC, [Vhost, Outcome, Reason]).

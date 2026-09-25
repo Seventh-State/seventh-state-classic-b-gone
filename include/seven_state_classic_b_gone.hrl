@@ -8,7 +8,8 @@
 -define(INTERCEPTOR, <<"7S Classic-b-gone Interceptor">>).
 -define(PARAMETER, <<"seven_state_classic_b_gone">>).
 -define(PARAMETER_NAME, <<"mode">>).
--define(METRIC, seven_state_classic_b_gone_requests).
+-define(METRIC, seven_state_classic_b_gone_queue_declares_total).
+-define(METRIC_INBOUND, seven_state_classic_b_gone_queue_declares_seen_total).
 
 -define(APP, seven_state_classic_b_gone).
 
