@@ -167,7 +167,7 @@ passthrough(Exclusive, Transient, QueueType, QueueName, User, VHost, LogFunc, Me
 -spec enforce(maybe_enforce_mode(), atom(), binary(), rabbit_types:username(), rabbit_types:vhost(), block_reasons(), rabbit_types:content() | 'none', #channelRecord{}) -> {rabbit_types:content() | 'none', #channelRecord{}}.
 enforce(EnforceMode, QueueType, QueueName, User, VHost, Reason, Method, Content) ->
     ok = seven_state_classic_b_gone_prometheus:count(VHost, EnforceMode, translate_for_metric(Reason)),
-    ?LOG(log_level(EnforceMode), "~ts User '~p' declared queue '~ts' (~p) in vhost '~p' - reason '~ts'", [new_queue_log_message(EnforceMode), User, QueueName, QueueType, VHost, translate(Reason)]),
+    ?LOG(log_level(EnforceMode), "~ts User '~ts' declared queue '~ts' (~p) in vhost '~ts' - reason '~ts'", [new_queue_log_message(EnforceMode), User, QueueName, QueueType, VHost, translate(Reason)]),
     enforce(EnforceMode, Reason, Method, Content).
 
 -spec enforce(maybe_enforce_mode(), block_reasons(), rabbit_types:content() | 'none', #channelRecord{}) -> rabbit_types:amqp_error() | {rabbit_types:content() | 'none', #channelRecord{}}.
@@ -279,11 +279,11 @@ log_enforcement_none(_, _, QueueType, QueueName, User, VHost) ->
 
 -spec log_early_exit(block_reasons(), string(), rabbit_queue_type:queue_type(), binary(), rabbit_types:username(), rabbit_types:vhost()) -> no_return().
 log_early_exit(TextKey, ExtraText, QueueType, QueueName, User, VHost) ->
-    ?DBG("~ts~ts: User '~p' declared queue '~ts' (~ts) in vhost '~ts'", [translate(TextKey), ExtraText, User, QueueName, QueueType, VHost]).
+    ?DBG("~ts~ts: User '~ts' declared queue '~ts' (~ts) in vhost '~ts'", [translate(TextKey), ExtraText, User, QueueName, QueueType, VHost]).
 
 -spec log_intercept(rabbit_types:vhost(), rabbit_types:username(), rabbit_queue_type:queue_type(), binary(), proplists:proplist(), boolean(), boolean(), boolean()) -> ok.
 log_intercept(VHost, User, QueueType, QueueName, Args, Passive, Exclusive, Transient) ->
-    ?DBG("Entering intercept for Virtual Host '~ts', User '~p'~ts declaring '~ts' of type~ts~ts '~p'. Extra queue args: ~p", [
+    ?DBG("Entering intercept for Virtual Host '~ts', User '~ts'~ts declaring '~ts' of type~ts~ts '~p'. Extra queue args: ~p", [
         VHost,
         User,
         passive_text(Passive),
